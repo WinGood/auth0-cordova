@@ -66,6 +66,7 @@ CordovaAuth.prototype.authorize = function (parameters, callback) {
   }
 
   var self = this;
+  var canAuthorize = true;
 
   getAgent(function (err, agent) {
     if (err) {
@@ -111,8 +112,7 @@ CordovaAuth.prototype.authorize = function (parameters, callback) {
         }
       }
 
-      if (result.event !== 'loaded') {
-        // Ignore any other events.
+      if (canAuthorize === false) {
         return;
       }
 
@@ -142,6 +142,12 @@ CordovaAuth.prototype.authorize = function (parameters, callback) {
           callback(new Error('Response state does not match expected state'));
           return true;
         }
+
+        if (canAuthorize === false) {
+          return;
+        }
+
+        canAuthorize = false;
 
         var code = response.code;
         var verifier = keys.codeVerifier;
