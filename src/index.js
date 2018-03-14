@@ -151,13 +151,14 @@ CordovaAuth.prototype.authorize = function (parameters, callback) {
 
         var code = response.code;
         var verifier = keys.codeVerifier;
+        agent.close();
+
         client.oauthToken({
           code_verifier: verifier,
           grantType: 'authorization_code',
           redirectUri: redirectUri,
           code: code
         }, function (exchangeError, exchangeResult) {
-          agent.close();
           if (exchangeError) {
             return callback(exchangeError);
           }
@@ -182,7 +183,54 @@ CordovaAuth.prototype.authorize = function (parameters, callback) {
  * @param {String} url with a custom scheme relied to the application
  */
 CordovaAuth.onRedirectUri = function (url) {
-  session.onRedirectUri(url);
+  // If we are running in UIWebView we need to wait
+  if (window.webkit && window.webkit.messageHandlers) {
+    return session.onRedirectUri(url);
+  }
+
+  return setTimeout(function () {
+    session.onRedirectUri(url);
+  }, 4);
+};
+
+/**
+ * Redirects to the auth0 logout endpoint and does a federated logout in a new webview.
+ * Client level logouts should be handled by application level code and call this either in parallel or after the success of that code
+ *
+ * - If the client_id parameter is included, the returnTo URL must be listed in the Allowed Logout URLs set at the client level (see Setting Allowed Logout URLs at the App Level).
+ * - If the client_id parameter is NOT included, the returnTo URL must be listed in the Allowed Logout URLs set at the account level (see Setting Allowed Logout URLs at the Account Level).
+ * - This will always be a federated logout.
+ *
+ * @method federatedLogout
+ * @param {Object} options
+ * @param {String} [options.clientID] identifier of your client
+ * @param {String} [options.returnTo] URL to be redirected after the logout
+ * @param {Callback} callback - optional. Callback arguments of the format (error {Exception})
+ * @see   {@link https://auth0.com/docs/api/authentication#logout}
+ */
+CordovaAuth.prototype.federatedLogout = function(parameters, callback) {
+  if (!callback || typeof callback !== 'function') {
+    callback = function() {};
+  }
+
+  var logout_options = Object.assign({}, parameters, {
+    federated: true
+  });
+  var logoutUrl = this.client.buildLogoutUrl(logout_options);
+
+  getAgent(function (err, agent) {
+    if (err != null) {
+      return callback(err);
+    }
+
+    agent.open(logoutUrl, function (err, unused) {
+      callback(err);
+      // This 2500ms delay strikes a balance between allowing the page to perform its logout,
+      // user patience, and not knowing how that page
+      // will emit an event saying that the logout is complete.
+      setTimeout(agent.close, 2500);
+    });
+  });
 };
 
 CordovaAuth.version = version;
